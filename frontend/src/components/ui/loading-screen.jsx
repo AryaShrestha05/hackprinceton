@@ -54,6 +54,7 @@ export default function LoadingScreen({ onFinish }) {
       <div className="loading-backdrop" />
       <div className="loading-content">
         <div className="loading-circle-shell">
+          <div className="loading-logo-glow" />
           <svg className="loading-ring" viewBox="0 0 160 160" fill="none">
             <circle cx="80" cy="80" r="70" stroke="rgba(255, 255, 255, 0.4)" strokeWidth="5" strokeLinecap="round" strokeDasharray="440" />
           </svg>

@@ -1,13 +1,37 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
+import SubtleDots from '@/components/ui/subtle-dots'
+import PointerDot from '@/components/ui/pointer-dot'
 import PostureLogo from '@/components/ui/posture-logo'
 import LoadingScreen from '@/components/ui/loading-screen'
+import SmokeyCursor from '@/components/ui/smokey-cursor'
 
 export default function HomePage({ onBegin, onViewSummary, hasSummary }) {
   const titleRef = useRef(null)
   const heroRef = useRef(null)
+  const rootRef = useRef(null)
   const [showLoader, setShowLoader] = useState(true)
   const [isReady, setIsReady] = useState(false)
+  const [isExiting, setIsExiting] = useState(false)
+
+  const handleBegin = useCallback(() => {
+    if (!onBegin || isExiting) return
+    setIsExiting(true)
+    const el = rootRef.current
+    if (!el) {
+      onBegin()
+      return
+    }
+
+    gsap.to(el, {
+      opacity: 0,
+      duration: 0.65,
+      ease: 'power1.inOut',
+      onComplete: () => {
+        onBegin()
+      },
+    })
+  }, [isExiting, onBegin])
 
   useEffect(() => {
     if (!isReady) return
@@ -16,13 +40,13 @@ export default function HomePage({ onBegin, onViewSummary, hasSummary }) {
     const handleKeydown = (event) => {
       if (event.code === 'Space') {
         event.preventDefault()
-        onBegin()
+        handleBegin()
       }
     }
 
     window.addEventListener('keydown', handleKeydown)
     return () => window.removeEventListener('keydown', handleKeydown)
-  }, [isReady, onBegin])
+  }, [handleBegin, isReady, onBegin])
 
   useEffect(() => {
     if (!isReady) return
@@ -90,8 +114,17 @@ export default function HomePage({ onBegin, onViewSummary, hasSummary }) {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden">
+    <div ref={rootRef} className="relative min-h-screen overflow-hidden bg-aurora">
       {showLoader && <LoadingScreen onFinish={handleLoaderFinish} />}
+      {isReady && (
+        <>
+          <SubtleDots />
+          <PointerDot />
+        </>
+      )}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="grid-overlay absolute inset-0" aria-hidden="true" />
+      </div>
 
       <div
         ref={heroRef}
@@ -133,7 +166,7 @@ export default function HomePage({ onBegin, onViewSummary, hasSummary }) {
               <button
                 type="button"
                 className="hero-button primary-button px-16 text-lg"
-                onClick={onBegin}
+                onClick={handleBegin}
               >
                 <span>press space to start</span>
               </button>
@@ -149,6 +182,18 @@ export default function HomePage({ onBegin, onViewSummary, hasSummary }) {
           </div>
         </section>
       </div>
+
+      <SmokeyCursor
+        simulationResolution={96}
+        dyeResolution={960}
+        densityDissipation={4.5}
+        velocityDissipation={2.5}
+        curl={2}
+        splatRadius={0.12}
+        splatForce={3200}
+        colorUpdateSpeed={6}
+      />
     </div>
   )
 }
+
