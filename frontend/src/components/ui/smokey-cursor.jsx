@@ -891,7 +891,15 @@ function updatePointerMove(pointer, posX, posY, canvas) {
   pointer.texcoordY = 1.0 - posY / height
   pointer.deltaX = (pointer.texcoordX - pointer.prevTexcoordX) * 0.6
   pointer.deltaY = (pointer.texcoordY - pointer.prevTexcoordY) * 0.6
-  pointer.moved = Math.abs(pointer.deltaX) > 0 || Math.abs(pointer.deltaY) > 0
+
+  const MIN_DELTA = 0.0025
+  const movedX = Math.abs(pointer.deltaX) > MIN_DELTA
+  const movedY = Math.abs(pointer.deltaY) > MIN_DELTA
+
+  if (!movedX) pointer.deltaX = 0
+  if (!movedY) pointer.deltaY = 0
+
+  pointer.moved = movedX || movedY
 }
 
 function updatePointerUp(pointer) {

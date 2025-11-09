@@ -1,29 +1,33 @@
 from __future__ import annotations
 
+import threading
+import time
+from collections import deque
 from typing import Generator, List
+
 import cv2
 import mediapipe as mp
 import numpy as np
-from collections import deque
 from flask import Flask, Response, jsonify
 from flask_cors import CORS
 from mediapipe.framework.formats import landmark_pb2
-import threading
-import time
 
 mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
 
+MAX_SAMPLES = 3600  # keep up to an hour of 1 Hz samples
+CALIBRATION_SECONDS = 3.0
+
 state_lock = threading.Lock()
-MAX_SAMPLES = 3600  # keep up to an hour of 1Hz samples
 
 session_state = {
+    "is_running": False,
     "start_time": None,
     "calibration_start": None,
     "calibration_samples": [],
     "baseline_angle": None,
-    "status_message": "calibrating…",
-    "classification": "calibrating",
+    "status_message": "Session idle. Start to begin calibration.",
+    "classification": "idle",
     "current_delta": 0.0,
     "data": deque(maxlen=MAX_SAMPLES),
     "last_logged_time": None,
@@ -51,6 +55,9 @@ def create_app() -> Flask:
                 "data": list(session_state["data"]),
                 "intervals": compute_intervals(list(session_state["data"])),
             }
+            session_state["is_running"] = False
+            session_state["status_message"] = "Session stopped. Start to capture a new baseline."
+            session_state["classification"] = "idle"
         return {"status": "stopped", "snapshot": snapshot}
 
     @app.get("/api/video_feed")
@@ -63,30 +70,23 @@ def create_app() -> Flask:
     @app.get("/api/session/posture")
     def posture_summary() -> Response:
         with state_lock:
-            baseline = session_state["baseline_angle"]
-            status_message = session_state["status_message"]
-            classification = session_state["classification"]
-            current_delta = session_state["current_delta"]
-            start_time = session_state["start_time"]
-            data_points = list(session_state["data"])
-
-        intervals = compute_intervals(data_points)
-
-        payload = {
-            "baseline_angle": baseline,
-            "status_message": status_message,
-            "classification": classification,
-            "current_delta": current_delta,
-            "start_time": start_time,
-            "samples": data_points,
-            "intervals": intervals,
-        }
+            payload = {
+                "baseline_angle": session_state["baseline_angle"],
+                "status_message": session_state["status_message"],
+                "classification": session_state["classification"],
+                "current_delta": session_state["current_delta"],
+                "start_time": session_state["start_time"],
+                "samples": list(session_state["data"]),
+                "intervals": compute_intervals(list(session_state["data"])),
+                "is_running": session_state["is_running"],
+            }
         return jsonify(payload)
 
     return app
 
 
 def _initialize_session_locked(now: float) -> None:
+    session_state["is_running"] = True
     session_state["start_time"] = now
     session_state["calibration_start"] = now
     session_state["calibration_samples"] = []
@@ -117,13 +117,15 @@ def stream_with_visualization() -> Generator[bytes, None, None]:
             if not success:
                 continue
 
-            mirrored = cv2.flip(frame, 1)
             image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = pose.process(image_rgb)
 
+            mirrored = cv2.flip(frame, 1)
             annotated = mirrored.copy()
+
             if results.pose_landmarks:
-                update_session_state(results, frame, mirrored)
+                update_session_state(results, frame)
+
                 mirrored_landmarks = landmark_pb2.NormalizedLandmarkList()
                 for landmark in results.pose_landmarks.landmark:
                     mirrored_landmark = mirrored_landmarks.landmark.add()
@@ -156,26 +158,54 @@ def stream_with_visualization() -> Generator[bytes, None, None]:
                 right_angle = calculate_angle(nose_point, viewer_right_point, viewer_left_point)
                 nose_angle = calculate_angle(viewer_left_point, nose_point, viewer_right_point)
 
-                cv2.putText(annotated, f"{int(left_angle)}°", tuple(viewer_left_point.astype(int)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2, cv2.LINE_AA)
-                cv2.putText(annotated, f"{int(right_angle)}°", tuple(viewer_right_point.astype(int)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2, cv2.LINE_AA)
-                cv2.putText(annotated, f"{int(nose_angle)}°", tuple(nose_point.astype(int)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2, cv2.LINE_AA)
+                if not np.isnan(left_angle):
+                    cv2.putText(
+                        annotated,
+                        f"{int(round(left_angle))}°",
+                        tuple(viewer_left_point.astype(int)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.8,
+                        (0, 255, 0),
+                        2,
+                        cv2.LINE_AA,
+                    )
+                if not np.isnan(right_angle):
+                    cv2.putText(
+                        annotated,
+                        f"{int(round(right_angle))}°",
+                        tuple(viewer_right_point.astype(int)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.8,
+                        (0, 255, 0),
+                        2,
+                        cv2.LINE_AA,
+                    )
+                if not np.isnan(nose_angle):
+                    cv2.putText(
+                        annotated,
+                        f"{int(round(nose_angle))}°",
+                        tuple(nose_point.astype(int)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.8,
+                        (0, 0, 255),
+                        2,
+                        cv2.LINE_AA,
+                    )
 
             ret, buffer = cv2.imencode(".jpg", annotated)
             if not ret:
                 continue
-            frame_bytes = buffer.tobytes()
-            yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n")
+            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
     finally:
         cap.release()
         pose.close()
 
 
-def update_session_state(results, frame, mirrored) -> None:
+def update_session_state(results, frame) -> None:
     now = time.time()
     with state_lock:
+        if not session_state["is_running"]:
+            return
         if session_state["start_time"] is None:
             _initialize_session_locked(now)
         start_time = session_state["start_time"]
@@ -189,13 +219,17 @@ def update_session_state(results, frame, mirrored) -> None:
     right_shoulder = np.array([landmarks[12].x * frame.shape[1], landmarks[12].y * frame.shape[0]])
     nose_angle = calculate_angle(left_shoulder, nose, right_shoulder)
 
+    if np.isnan(nose_angle):
+        # Skip frames with unreliable geometry (landmarks collapsed)
+        return
+
     if baseline is None:
         elapsed = now - calibration_start
         samples.append(nose_angle)
-        remaining = max(0.0, 3.0 - elapsed)
+        remaining = max(0.0, CALIBRATION_SECONDS - elapsed)
         status = f"Hold steady to capture baseline… {remaining:.1f}s"
 
-        if elapsed >= 3.0 and samples:
+        if elapsed >= CALIBRATION_SECONDS and samples:
             baseline = float(np.mean(samples))
             status = "Baseline captured. Tracking posture."
 
@@ -209,10 +243,6 @@ def update_session_state(results, frame, mirrored) -> None:
         return
 
     delta = float(nose_angle - baseline)
-
-    # ✅ FIX: invert sign to match mirrored camera behavior
-    delta *= -1
-
     classification = classify_delta(delta)
 
     with state_lock:
@@ -220,40 +250,29 @@ def update_session_state(results, frame, mirrored) -> None:
         session_state["classification"] = classification
         session_state["current_delta"] = delta
 
-        last_logged = session_state["last_logged_time"]
         rel_time = now - start_time
+        last_logged = session_state["last_logged_time"]
         if last_logged is None or (now - last_logged) >= 1.0:
             session_state["data"].append({"time": rel_time, "delta": delta})
             session_state["last_logged_time"] = now
 
 
-def overlay_status(frame: np.ndarray) -> None:
-    with state_lock:
-        status = session_state["status_message"]
-        classification = session_state["classification"]
-
-    color = {
-        "good": (0, 255, 0),
-        "moderate": (0, 215, 255),
-        "bad": (0, 0, 255),
-        "calibrating": (255, 255, 255),
-    }.get(classification, (255, 255, 255))
-
-    overlay = frame.copy()
-    cv2.rectangle(overlay, (20, 20), (460, 100), (0, 0, 0), -1)
-    cv2.addWeighted(overlay, 0.35, frame, 0.65, 0, frame)
-    cv2.putText(frame, status, (36, 72), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2, cv2.LINE_AA)
-
-
 def classify_delta(delta: float) -> str:
-    if delta <= -10.0:
+    if delta >= 10.0:
         return "bad"
-    if delta <= -5.0:
+    if delta >= 5.0:
         return "moderate"
     return "good"
 
 
-
+def classification_message(classification: str) -> str:
+    return {
+        "bad": "Adjust now: posture is poor.",
+        "moderate": "Heads up: posture drifting.",
+        "good": "Posture on point.",
+        "calibrating": "Calibrating posture…",
+        "idle": "Session idle. Start to begin calibration.",
+    }[classification]
 
 
 def compute_intervals(data_points: List[dict]) -> List[dict]:
@@ -271,13 +290,14 @@ def compute_intervals(data_points: List[dict]) -> List[dict]:
         if not window:
             continue
         avg_delta = float(np.mean([p["delta"] for p in window]))
-        classification = classify_delta(avg_delta)
-        intervals.append({
-            "start": start,
-            "end": end,
-            "average_delta": avg_delta,
-            "classification": classification,
-        })
+        intervals.append(
+            {
+                "start": start,
+                "end": end,
+                "average_delta": avg_delta,
+                "classification": classify_delta(avg_delta),
+            }
+        )
 
     return intervals
 
@@ -285,12 +305,17 @@ def compute_intervals(data_points: List[dict]) -> List[dict]:
 def calculate_angle(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
     ba = a - b
     bc = c - b
-    cosine_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
-    angle = np.degrees(np.arccos(np.clip(cosine_angle, -1.0, 1.0)))
+    denom = np.linalg.norm(ba) * np.linalg.norm(bc)
+    if denom == 0.0:
+        return float("nan")
+    cosine_angle = np.dot(ba, bc) / denom
+    cosine_angle = np.clip(cosine_angle, -1.0, 1.0)
+    angle = np.degrees(np.arccos(cosine_angle))
     return float(angle)
 
 
 app = create_app()
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, threaded=True)

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as d3 from 'd3'
 import { gsap } from 'gsap'
 import SubtleDots from '@/components/ui/subtle-dots'
+import PointerDot from '@/components/ui/pointer-dot'
 import SmokeyCursor from '@/components/ui/smokey-cursor'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000'
@@ -9,8 +10,9 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5000
 export default function LiveWebcamShell() {
   const rootRef = useRef(null)
   const [streamError, setStreamError] = useState('')
+  const [streamUrl, setStreamUrl] = useState('')
   const [summary, setSummary] = useState(null)
-  const [sessionState, setSessionState] = useState('idle') // idle | starting | running | stopping
+  const [sessionPhase, setSessionPhase] = useState('idle') // idle | starting | running | stopping
   const chartRef = useRef(null)
   const pollRef = useRef(null)
   const videoRef = useRef(null)
@@ -26,25 +28,27 @@ export default function LiveWebcamShell() {
   }, [])
 
   const startSession = async () => {
-    setSessionState('starting')
+    setSessionPhase('starting')
     setStreamError('')
     try {
       const response = await fetch(`${API_BASE_URL}/api/session/start`, { method: 'POST' })
       if (!response.ok) throw new Error(await response.text())
       await response.json()
-      setSessionState('running')
+      const url = `${API_BASE_URL}/api/video_feed?ts=${Date.now()}`
+      setStreamUrl(url)
       if (videoRef.current) {
-        videoRef.current.src = `${API_BASE_URL}/api/video_feed?ts=${Date.now()}`
+        videoRef.current.src = url
       }
+      setSessionPhase('running')
     } catch (error) {
       console.error('start session failed', error)
       setStreamError('unable to start session. check the backend.')
-      setSessionState('idle')
+      setSessionPhase('idle')
     }
   }
 
   const stopSession = async () => {
-    setSessionState('stopping')
+    setSessionPhase('stopping')
     try {
       const response = await fetch(`${API_BASE_URL}/api/session/stop`, { method: 'POST' })
       if (!response.ok) throw new Error(await response.text())
@@ -56,7 +60,8 @@ export default function LiveWebcamShell() {
       console.error('stop session failed', error)
       setStreamError('unable to stop session. check the backend.')
     } finally {
-      setSessionState('idle')
+      setSessionPhase('idle')
+      setStreamUrl('')
       if (videoRef.current) {
         videoRef.current.src = ''
       }
@@ -85,6 +90,22 @@ export default function LiveWebcamShell() {
   }, [])
 
   useEffect(() => {
+    const isRunning = summary?.is_running ?? false
+    setSessionPhase((prev) => {
+      if (isRunning && (prev === 'starting' || prev === 'idle')) {
+        return 'running'
+      }
+      if (!isRunning && prev === 'running') {
+        return 'idle'
+      }
+      if (!isRunning && prev === 'stopping') {
+        return 'idle'
+      }
+      return prev
+    })
+  }, [summary?.is_running])
+
+  useEffect(() => {
     const intervals = summary?.intervals ?? []
     const svgElement = chartRef.current
     if (!svgElement) return
@@ -103,7 +124,7 @@ export default function LiveWebcamShell() {
         .attr('y', height / 2)
         .attr('text-anchor', 'middle')
         .attr('fill', '#94a3b8')
-        .text('collecting posture samples…')
+        .text('Collecting head tilt samples…')
       return
     }
 
@@ -117,10 +138,10 @@ export default function LiveWebcamShell() {
       .range([0, innerWidth])
 
     const yExtent = d3.extent(intervals, (d) => d.average_delta)
-    const padding = 2
+    const padding = 1.5
     const yScale = d3
       .scaleLinear()
-      .domain([Math.min(-10, (yExtent[0] ?? 0) - padding), Math.max(10, (yExtent[1] ?? 0) + padding)])
+      .domain([Math.min(-5, (yExtent[0] ?? 0) - padding), Math.max(12, (yExtent[1] ?? 0) + padding)])
       .range([innerHeight, 0])
       .nice()
 
@@ -183,7 +204,7 @@ export default function LiveWebcamShell() {
       .attr('y', -12)
       .attr('text-anchor', 'start')
       .attr('fill', '#f8fafc')
-      .text('average nose delta (°)')
+      .text('Head tilt change (°)')
   }, [summary?.intervals])
 
   return (
@@ -199,6 +220,7 @@ export default function LiveWebcamShell() {
         splatForce={3200}
         colorUpdateSpeed={6}
       />
+      <PointerDot />
 
       <div className="pointer-events-none absolute inset-0">
         <div className="grid-overlay absolute inset-0" aria-hidden="true" />
@@ -218,9 +240,15 @@ export default function LiveWebcamShell() {
                     <img
                       ref={videoRef}
                       className="webcam-shell__video"
+                      alt="live posture stream"
+                      src={streamUrl}
                       onError={() => {
                         setStreamError('unable to load the webcam stream. is the flask backend running?')
-                        setSessionState('idle')
+                        setSessionPhase('idle')
+                        setStreamUrl('')
+                        if (videoRef.current) {
+                          videoRef.current.src = ''
+                        }
                       }}
                     />
                   </div>
@@ -231,19 +259,7 @@ export default function LiveWebcamShell() {
           <div className="live-layout-top__aside">
             <div className="live-status-panel">
               {summary && !streamError ? (
-                <div className={`webcam-shell__status webcam-shell__status--${summary.classification}`}>
-                  <p>{summary.status_message}</p>
-                  {typeof summary.baseline_angle === 'number' && (
-                    <p>
-                      baseline: <span>{summary.baseline_angle.toFixed(1)}°</span>
-                    </p>
-                  )}
-                  {typeof summary.current_delta === 'number' && (
-                    <p>
-                      delta: <span>{summary.current_delta.toFixed(1)}°</span>
-                    </p>
-                  )}
-                </div>
+                <PostureSummary summary={summary} />
               ) : (
                 <div className="webcam-shell__status webcam-shell__status--calibrating">
                   <p>Session idle. Start to begin calibration.</p>
@@ -253,15 +269,15 @@ export default function LiveWebcamShell() {
             <button
               type="button"
               className="primary-button primary-button--compact live-layout__button"
-              onClick={sessionState === 'running' ? stopSession : startSession}
-              disabled={sessionState === 'starting' || sessionState === 'stopping'}
+              onClick={sessionPhase === 'running' ? stopSession : startSession}
+              disabled={sessionPhase === 'starting' || sessionPhase === 'stopping'}
             >
               <span>
-                {sessionState === 'starting'
+                {sessionPhase === 'starting'
                   ? 'starting…'
-                  : sessionState === 'stopping'
+                  : sessionPhase === 'stopping'
                   ? 'stopping…'
-                  : sessionState === 'running'
+                  : sessionPhase === 'running'
                   ? 'end session'
                   : 'start session'}
               </span>
@@ -271,11 +287,47 @@ export default function LiveWebcamShell() {
         <div className="webcam-analytics">
           <div className="webcam-analytics__header">
             <h2>Your Posture Trends, Live:</h2>
+            <p>Each point shows your average head tilt over the last 10 seconds.</p>
+            <div className="webcam-analytics__legend" aria-hidden="true">
+              <span className="legend-item legend-item--good">Good posture</span>
+              <span className="legend-item legend-item--moderate">OK</span>
+              <span className="legend-item legend-item--bad">Needs Work</span>
+            </div>
           </div>
           <svg ref={chartRef} className="webcam-chart" role="img" aria-label="posture delta line chart" />
         </div>
       </div>
     </div>
   )
+}
+
+function PostureSummary({ summary }) {
+  const baseline = typeof summary.baseline_angle === 'number' ? summary.baseline_angle : null
+  const delta = typeof summary.current_delta === 'number' ? summary.current_delta : null
+
+  const tiltDirection = delta != null ? (delta >= 0 ? 'up' : 'down') : null
+  const tiltMagnitude = delta != null ? Math.abs(delta) : null
+  const friendlyTilt =
+    tiltMagnitude != null ? `${tiltMagnitude.toFixed(1)}° ${tiltDirection === 'up' ? 'up' : 'down'}` : '—'
+
+  return (
+    <div className={`webcam-shell__status webcam-shell__status--${summary.classification}`}>
+      <p className="webcam-shell__status-heading">{formatStatus(summary.status_message)}</p>
+      <p>
+        Starting angle: <span>{baseline != null ? `${baseline.toFixed(1)}°` : 'capturing…'}</span>
+      </p>
+      <p>
+        Current head tilt: <span>{baseline != null ? friendlyTilt : 'capturing…'}</span>
+      </p>
+    </div>
+  )
+}
+
+function formatStatus(message = '') {
+  const lower = message.toLowerCase().trim()
+  if (lower.startsWith('posture on point')) return 'Posture On Point'
+  if (lower.startsWith('heads up')) return 'Heads Up: Adjust Slightly'
+  if (lower.startsWith('adjust now')) return 'Adjust Now'
+  return message
 }
 

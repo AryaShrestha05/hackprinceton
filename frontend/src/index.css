@@ -60,12 +60,21 @@ body {
   background-color: var(--background-900);
   color: var(--text-primary);
   cursor: none;
-  font-family: 'Melodrama', 'Times New Roman', serif;
+  font-family: 'Satoshi', 'Melodrama', 'Times New Roman', serif;
   font-weight: 400;
   letter-spacing: 0.001em;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.no-native-cursor,
+button,
+button *,
+a,
+a *,
+[role='button'] {
+  cursor: none !important;
 }
 
 a {
@@ -553,11 +562,11 @@ a:hover {
   height: auto;
   border-radius: 36px;
   border: 1px solid rgba(255, 255, 255, 0.12);
-  background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.06), transparent 55%),
-    rgba(3, 3, 3, 0.92);
+  background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.15), transparent 60%),
+    rgba(3, 3, 3, 0.78);
   box-shadow:
     0 40px 80px -45px rgba(0, 0, 0, 0.9),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -605,41 +614,83 @@ a:hover {
 
 .webcam-shell__status {
   padding: 1.1rem 1.6rem;
-  border-radius: 18px;
-  background: rgba(10, 12, 28, 0.72);
-  border: 1px solid rgba(120, 190, 255, 0.2);
-  backdrop-filter: blur(14px);
+  border-radius: 20px;
+  background: rgba(12, 12, 12, 0.54);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(26px);
   display: grid;
-  gap: 0.35rem;
+  gap: 0.45rem;
   font-size: 0.95rem;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  text-shadow: none;
+  font-family: 'Satoshi', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  color: rgba(248, 248, 248, 0.92);
+}
+
+.webcam-shell__status-heading {
+  font-size: 0.98rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(240, 240, 240, 0.92);
 }
 
 .webcam-shell__status span {
   font-weight: 600;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.96);
 }
 
 .webcam-shell__status--good {
-  border-color: rgba(34, 197, 94, 0.35);
-  color: rgba(34, 197, 94, 0.92);
+  border-color: rgba(255, 255, 255, 0.26);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.webcam-shell__status--good .webcam-shell__status-heading {
+  color: rgba(52, 211, 153, 0.95);
+}
+
+.webcam-shell__status--good span {
+  color: rgba(235, 255, 244, 0.96);
 }
 
 .webcam-shell__status--moderate {
-  border-color: rgba(245, 158, 11, 0.35);
-  color: rgba(245, 158, 11, 0.92);
+  border-color: rgba(255, 255, 255, 0.26);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.webcam-shell__status--moderate .webcam-shell__status-heading {
+  color: rgba(250, 204, 21, 0.92);
+}
+
+.webcam-shell__status--moderate span {
+  color: rgba(254, 250, 235, 0.94);
 }
 
 .webcam-shell__status--bad {
-  border-color: rgba(239, 68, 68, 0.35);
-  color: rgba(239, 68, 68, 0.92);
+  border-color: rgba(255, 255, 255, 0.26);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.webcam-shell__status--bad .webcam-shell__status-heading {
+  color: rgba(248, 113, 113, 0.95);
+}
+
+.webcam-shell__status--bad span {
+  color: rgba(255, 241, 241, 0.96);
 }
 
 .webcam-shell__status--calibrating {
-  border-color: rgba(148, 163, 184, 0.35);
-  color: rgba(226, 232, 240, 0.9);
+  border-color: rgba(255, 255, 255, 0.26);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
+.webcam-shell__status--calibrating .webcam-shell__status-heading {
+  color: rgba(96, 165, 250, 0.92);
+}
+
+.webcam-shell__status--calibrating span {
+  color: rgba(240, 247, 255, 0.94);
+}
 .webcam-shell__error {
   text-align: center;
   color: rgba(240, 240, 240, 0.9);
@@ -665,9 +716,13 @@ a:hover {
   gap: 1.2rem;
   padding: 1.8rem;
   border-radius: 28px;
-  background: rgba(8, 10, 12, 0.92);
-  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(10, 12, 18, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  backdrop-filter: blur(22px);
   min-height: 320px;
+  box-shadow:
+    0 32px 60px -40px rgba(8, 10, 20, 0.65),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
 .webcam-analytics__header h2 {
@@ -682,6 +737,47 @@ a:hover {
   color: rgba(226, 232, 240, 0.78);
   font-size: 0.95rem;
   letter-spacing: 0.04em;
+}
+
+.webcam-analytics__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.9rem;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: 9999px;
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(226, 232, 240, 0.9);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.legend-item::before {
+  content: '';
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(15, 15, 15, 0.4);
+}
+
+.legend-item--good::before {
+  background: #22c55e;
+}
+
+.legend-item--moderate::before {
+  background: #f59e0b;
+}
+
+.legend-item--bad::before {
+  background: #ef4444;
 }
 
 .webcam-chart {
