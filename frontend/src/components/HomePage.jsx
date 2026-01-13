@@ -135,7 +135,7 @@ export default function HomePage({ onBegin, onViewSummary, hasSummary }) {
         <aside className="hero-stagger flex w-full flex-none flex-col items-center justify-center gap-10 py-12 md:w-2/5 md:items-start">
           <div className="inline-flex items-center gap-6 px-4 py-4">
             <PostureLogo className="h-20 w-20 text-white/85" />
-            <div className="space-y-1">
+            <div className="space-y-1 -mt-2">
               <p className="text-sm font-semibold uppercase tracking-[0.4em] text-white/60">posturize</p>
               <p className="text-lg font-medium text-white">movement intelligence</p>
             </div>

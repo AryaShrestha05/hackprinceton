@@ -42,6 +42,13 @@ def create_app() -> Flask:
     """Configure the Flask app, register the endpoints, and wire up CORS."""
     app = Flask(__name__)
     CORS(app, resources={r"/*": {"origins": "*"}})
+    app.config['PROPAGATE_EXCEPTIONS'] = True
+
+    @app.errorhandler(Exception)
+    def handle_error(error):
+        import traceback
+        traceback.print_exc()
+        return {"error": str(error)}, 500
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -69,10 +76,13 @@ def create_app() -> Flask:
 
     @app.get("/api/video_feed")
     def video_feed() -> Response:
-        return Response(
-            stream_with_visualization(),
-            mimetype="multipart/x-mixed-replace; boundary=frame",
-        )
+        try:
+            return Response(
+                stream_with_visualization(),
+                mimetype="multipart/x-mixed-replace; boundary=frame",
+            )
+        except RuntimeError as e:
+            return jsonify({"error": str(e)}), 500
 
     @app.get("/api/session/posture")
     def posture_summary() -> Response:
@@ -330,4 +340,6 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, threaded=True)
+    import os
+    port = int(os.environ.get("PORT", 5001))
+    app.run(host="0.0.0.0", port=port, threaded=True)
